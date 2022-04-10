@@ -4,44 +4,35 @@ import pathlib
 from time import sleep
 
 from numpy import cdouble
-import clientlibrarywrappyr
+import client
 
 
-# void example_axis(const double value) {
-#     printf("Axis got %lf.\n", value);
-# }
-
-AXIS = ctypes.CFUNCTYPE(None, ctypes.c_double)
+# AXIS = ctypes.CFUNCTYPE(None, ctypes.c_double)
 
 def axis (x):
     print(x)
 
-axisdef = AXIS(axis)
+# axisdef = AXIS(axis)
 
 if __name__ == "__main__":
-    # Load the shared library into ctypes
+    
+    client = client.Client()
 
-    client = clientlibrarywrappyr.wrappyr()
-    handle = client.InitializeLibrary()
+    print("Setting name")
+    client.set_name("spot-demo")
 
-    success = client.SetName(handle, "example")
-    print(success)
+    print("Setting reset callback")
+    client.set_reset(lambda: print("Resetting!", flush=True))
 
-    success = client.RegisterAxis(handle, "example", -1.0, 1.0, "example_group", "z", axisdef)
-    print(success)
+    print("adding axis")
+    client.register_axis("rotate", -1.0, 1.0, "example_group", "z", axis)
 
     print("connecting")
-    success = client.ConnectToServer(handle, "localhost", 45575)
-
-
+    client.connect_to_server("localhost", 45575)
     while(True):
-        sleep(2)
+        sleep(1)
         print("updating")
-        success = client.LibraryUpdate(handle)
-        print(success)
-        if(success == False):
-            break
-# 
+        client.library_update()
 
 #     libname = pathlib.Path().absolute() / "libclient.so"
 #     c_lib = ctypes.CDLL(libname)
