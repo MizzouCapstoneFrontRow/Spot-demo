@@ -2,7 +2,7 @@
 import ctypes
 import pathlib
 from time import sleep
-from typing import Callable
+from typing import Callable, List, Dict, Any
 
 class _Handle(ctypes.Structure):
     pass
@@ -11,6 +11,32 @@ _RESET = ctypes.CFUNCTYPE(None)
 _AXIS = ctypes.CFUNCTYPE(None, ctypes.c_double)
 _SENSOR = ctypes.CFUNCTYPE(None, ctypes.POINTER(ctypes.c_double))
 _FUNCTION = ctypes.CFUNCTYPE(None, ctypes.POINTER(ctypes.c_void_p), ctypes.POINTER(ctypes.c_void_p))
+
+_PARAMETER = ctypes.c_char_p * 2
+
+_STRING_RELEASE = ctypes.CFUNCTYPE(None, ctypes.c_char_p)
+_ARRAY_RELEASE = ctypes.CFUNCTYPE(None, ctypes.c_int, ctypes.c_void_p)
+
+class _STRING_INPUT(ctypes.Structure):
+    _fields_ = [
+        ("string", ctypes.c_char_p),
+    ]
+class _STRING_OUTPUT(ctypes.Structure):
+    _fields_ = [
+        ("string", ctypes.c_char_p),
+        ("release", _STRING_RELEASE),
+    ]
+class _ARRAY_INPUT(ctypes.Structure):
+    _fields_ = [
+        ("length", ctypes.c_int),
+        ("data", ctypes.c_void_p),
+    ]
+class _ARRAY_OUPUT(ctypes.Structure):
+    _fields_ = [
+        ("length", ctypes.c_int),
+        ("data", ctypes.c_void_p),
+        ("release", _ARRAY_RELEASE),
+    ]
 
 class Client:
     libname = pathlib.Path().absolute() / "libclient.so"
@@ -136,7 +162,33 @@ class Client:
         if not result:
             raise RuntimeError("Error setting reset handler")
 
-    # TODO: register_function
+    def register_function(self, name: str, parameters: Dict[str, str], returns: Dict[str, str], callback: Callable) -> None:
+        """
+        'callback' should take keyword parameters named in 'parameters' and should return a dict from string to values
+        of types specified in returns, or (if returns contains one element) a single value, or (if returns is empty) None
+        """
+        if not self.handle:
+            raise ValueError("Invalid client handle")
+
+        parameters: List[(str, str)] = [*parameters.items()]
+        parameters_encoded = [(name.encode(), type.encode()) for (name, type) in parameters]
+        raw_parameters_type = (_PARAMETER * (len(parameters) + 1)) # Array of len+1 arrays of 2 char*
+        raw_parameters = raw_parameters_type(*(_PARAMETER(name, type) for (name, type) in parameters_encoded)) # The last element will be (NULL, NULL)
+
+        returns: List[(str, str)] = [*returns.items()]
+        returns_encoded = [(name.encode(), type.encode()) for (name, type) in returns]
+        raw_returns_type = (_PARAMETER * (len(returns) + 1)) # Array of len+1 arrays of 2 char*
+        raw_returns = raw_returns_type(*(_PARAMETER(name, type) for (name, type) in returns_encoded)) # The last element will be (NULL, NULL)
+
+        def raw_callback(params: ctypes.POINTER(ctypes.c_void_p), returns: ctypes.POINTER(ctypes.c_void_p)):
+            print("TODO: implement function callback in wrapper library")
+            pass
+
+        raw_callback = _FUNCTION(raw_callback)
+        self._callbacks.append(raw_callback)
+        result = self._lib.RegisterFunction(self.handle, name.encode(), raw_parameters, raw_returns, raw_callback)
+        if not result:
+            raise RuntimeError("Error setting reset handler")
 
     def register_axis(self, name: str, min: float, max: float, group: str, direction: str, callback: Callable[[float], None]) -> None:
         if not self.handle:
@@ -150,11 +202,11 @@ class Client:
     def register_sensor(self, name: str, min: float, max: float, callback: Callable[[], float]) -> None:
         if not self.handle:
             raise ValueError("Invalid client handle")
-        def actual_callback(p: "ctypes.POINTER(ctypes.c_double)") -> None:
+        def raw_callback(p: "ctypes.POINTER(ctypes.c_double)") -> None:
             p[0] = callback()
-        actual_callback = _SENSOR(actual_callback)
-        self._callbacks.append(actual_callback)
-        result = self._lib.RegisterSensor(self.handle, name.encode(), min, max, actual_callback)
+        raw_callback = _SENSOR(raw_callback)
+        self._callbacks.append(raw_callback)
+        result = self._lib.RegisterSensor(self.handle, name.encode(), min, max, raw_callback)
         if not result:
             raise RuntimeError("Error registering sensor")
 
@@ -192,6 +244,18 @@ if __name__ == "__main__":
 
     print("adding axis")
     client.register_axis("example", -1.0, 1.0, "example_group", "z", lambda x: print("axis:", x))
+
+    print("adding function")
+    def count_bools(values: List[bool]) -> Dict[str, int]:
+        trues = 0
+        falses = 0
+        for value in values:
+            if value:
+                trues += 1
+            else:
+                falses += 1
+        return { "trues": trues, "falses": falses }
+    client.register_function("count_bools", {"values": "bool[]"}, {"trues": "int", "falses": "int"}, count_bools)
 
     x = 0.0
     def count() -> float:
