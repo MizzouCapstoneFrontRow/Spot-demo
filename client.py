@@ -1,6 +1,7 @@
 # ctypes_test.py
 import ctypes
 import pathlib
+import io
 from time import sleep
 from typing import Callable
 from enum import Enum
@@ -77,6 +78,10 @@ class Client:
         # so keep all callbacks referenced here
         self._callbacks = []
 
+        # Python will garbage-collect and close files out from under us if we don't reference them somewhere *in python*
+        # so keep all files referenced here
+        self._files = []
+
         # bool SetName(ClientHandle *handle, const char *name);
         self._lib.SetName.restype = _ErrorCodeRaw
         self._lib.SetName.argtypes = [ctypes.POINTER(_Handle), ctypes.c_char_p]
@@ -149,6 +154,7 @@ class Client:
             ctypes.POINTER(_Handle),
             ctypes.c_char_p,
             ctypes.c_uint16,
+            ctypes.c_uint16,
         ]
 
         # bool LibraryUpdate(ClientHandle *handle);
@@ -202,12 +208,19 @@ class Client:
         if result != 0:
             raise RuntimeError("Error registering sensor", ErrorCode(result))
 
-    # TODO: register_stream
-
-    def connect_to_server(self, address: str, port: int) -> None:
+    def register_stream(self, name: str, format: str, file: io.IOBase) -> None:
         if not self.handle:
             raise ValueError("Invalid client handle")
-        result = self._lib.ConnectToServer(self.handle, address.encode(), port)
+        fd: int = file.fileno() # may raise OSError if not supported
+        self._files.append(file)
+        result = self._lib.RegisterStream(self.handle, name.encode(), format.encode(), fd)
+        if result != 0:
+            raise RuntimeError("Error registering stream", ErrorCode(result))
+
+    def connect_to_server(self, address: str, port: int, stream_port: int) -> None:
+        if not self.handle:
+            raise ValueError("Invalid client handle")
+        result = self._lib.ConnectToServer(self.handle, address.encode(), port, stream_port)
         if result != 0:
             raise RuntimeError("Error connecting to server", ErrorCode(result))
 
@@ -225,6 +238,7 @@ class Client:
         self.handle = None
 
 if __name__ == "__main__":
+    import sys
 
     client = Client()
 
@@ -236,6 +250,9 @@ if __name__ == "__main__":
 
     print("adding axis")
     client.register_axis("example", -1.0, 1.0, "example_group", "z", lambda x: print("axis:", x))
+
+    print("adding stream")
+    client.register_stream("stdin", "lol", sys.stdin)
 
     x = 0.0
     def count() -> float:
@@ -249,7 +266,7 @@ if __name__ == "__main__":
     client.register_sensor("count", -1.0, 1.0, count)
 
     print("connecting");
-    client.connect_to_server("localhost", 45575)
+    client.connect_to_server("localhost", 45575, 45577)
 
     while(True):
         sleep(1)
