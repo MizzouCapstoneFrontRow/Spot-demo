@@ -3,9 +3,53 @@ import ctypes
 import pathlib
 from time import sleep
 from typing import Callable
+from enum import Enum
 
 class _Handle(ctypes.Structure):
     pass
+
+_ErrorCodeRaw = ctypes.c_int
+
+class ErrorCode(Enum):
+    # Success
+    NoError = 0
+    # An invalid handle was passed (and the error was detected)
+    InvalidHandle = 1
+    # An operation that requires a connected handle was called
+    # with an unconencted handle.
+    NotConnected = 2
+    # An operation that requires an unconnected handle was called
+    # with a conencted handle.
+    AlreadyConnected = 3
+    # A required parameter was null.
+    NullParameter = 4
+    # A string was not UTF8.
+    NonUtf8String = 5
+    # A parameter was invalid.
+    InvalidParameter = 6
+    # An error occurred reading a message
+    MessageReadError = 7
+    # The server sent an invalid message
+    InvalidMessageReceived = 8
+    # An error occurred writing a message
+    MessageWriteError = 9
+    # Tried to register a axis/function/sensor/stream with the same name as an
+    # existing one of the same thing.
+    DuplicateName = 10
+    # The server disconnected.
+    ServerDisconnected = 11
+    # The operation is unsupported (e.g. streams on Windows).
+    Unsupported = 12
+    # The server rejected the connection.
+    ConnectionRejected = 13
+    # Failed to connect because a required value (e.g. name) was not set.
+    MissingRequiredValue = 14
+    # Error connecting to server.
+    ConnectionError = 15
+    # Other error (nonfatal) e.g. server sent a FunctionCall with invalid parameters
+    # or a message that should never be sent to machine (e.g. AxisReturn)
+    Other = 16
+
 
 _RESET = ctypes.CFUNCTYPE(None)
 _AXIS = ctypes.CFUNCTYPE(None, ctypes.c_double)
@@ -34,11 +78,11 @@ class Client:
         self._callbacks = []
 
         # bool SetName(ClientHandle *handle, const char *name);
-        self._lib.SetName.restype = ctypes.c_bool
+        self._lib.SetName.restype = _ErrorCodeRaw
         self._lib.SetName.argtypes = [ctypes.POINTER(_Handle), ctypes.c_char_p]
 
         # bool SetReset(ClientHandle *handle, void(*reset)(void));
-        self._lib.SetReset.restype = ctypes.c_bool
+        self._lib.SetReset.restype = _ErrorCodeRaw
         self._lib.SetReset.argtypes = [ctypes.POINTER(_Handle), _RESET]
 
         # bool RegisterFunction(
@@ -48,7 +92,7 @@ class Client:
         #   const char (*returns)[2],
         #   void(*callback)(const void *const *const, void *const *const)
         # );
-        self._lib.RegisterFunction.restype = ctypes.c_bool
+        self._lib.RegisterFunction.restype = _ErrorCodeRaw
         self._lib.RegisterFunction.argtypes = [
             ctypes.POINTER(_Handle),
             ctypes.c_char_p,
@@ -64,7 +108,7 @@ class Client:
         #   double max,
         #   void(*callback)(double *const)
         # );
-        self._lib.RegisterSensor.restype = ctypes.c_bool
+        self._lib.RegisterSensor.restype = _ErrorCodeRaw
         self._lib.RegisterSensor.argtypes = [
             ctypes.POINTER(_Handle),
             ctypes.c_char_p,
@@ -82,7 +126,7 @@ class Client:
         #   const char *direction,
         #   void(*callback)(const double)
         # );
-        self._lib.RegisterAxis.restype = ctypes.c_bool
+        self._lib.RegisterAxis.restype = _ErrorCodeRaw
         self._lib.RegisterAxis.argtypes = [
             ctypes.POINTER(_Handle),
             ctypes.c_char_p,
@@ -100,7 +144,7 @@ class Client:
         #   const char *server,
         #   uint16_t port
         # );
-        self._lib.ConnectToServer.restype = ctypes.c_bool
+        self._lib.ConnectToServer.restype = _ErrorCodeRaw
         self._lib.ConnectToServer.argtypes = [
             ctypes.POINTER(_Handle),
             ctypes.c_char_p,
@@ -108,7 +152,7 @@ class Client:
         ]
 
         # bool LibraryUpdate(ClientHandle *handle);
-        self._lib.LibraryUpdate.restype = ctypes.c_bool
+        self._lib.LibraryUpdate.restype = _ErrorCodeRaw
         self._lib.LibraryUpdate.argtypes = [
             ctypes.POINTER(_Handle),
         ]
@@ -124,8 +168,8 @@ class Client:
         if not self.handle:
             raise ValueError("Invalid client handle")
         result = self._lib.SetName(self.handle, name.encode())
-        if not result:
-            raise RuntimeError("Error setting name")
+        if result != 0:
+            raise RuntimeError("Error setting name", ErrorCode(result))
 
     def set_reset(self, reset: Callable[[], None]) -> None:
         if not self.handle:
@@ -133,8 +177,8 @@ class Client:
         reset = _RESET(reset)
         self._callbacks.append(reset)
         result = self._lib.SetReset(self.handle, reset)
-        if not result:
-            raise RuntimeError("Error setting reset handler")
+        if result != 0:
+            raise RuntimeError("Error setting reset handler", ErrorCode(result))
 
     # TODO: register_function
 
@@ -144,8 +188,8 @@ class Client:
         callback = _AXIS(callback)
         self._callbacks.append(callback)
         result = self._lib.RegisterAxis(self.handle, name.encode(), min, max, group.encode(), direction.encode(), callback)
-        if not result:
-            raise RuntimeError("Error registering axis")
+        if result != 0:
+            raise RuntimeError("Error registering axis", ErrorCode(result))
 
     def register_sensor(self, name: str, min: float, max: float, callback: Callable[[], float]) -> None:
         if not self.handle:
@@ -155,8 +199,8 @@ class Client:
         actual_callback = _SENSOR(actual_callback)
         self._callbacks.append(actual_callback)
         result = self._lib.RegisterSensor(self.handle, name.encode(), min, max, actual_callback)
-        if not result:
-            raise RuntimeError("Error registering sensor")
+        if result != 0:
+            raise RuntimeError("Error registering sensor", ErrorCode(result))
 
     # TODO: register_stream
 
@@ -164,15 +208,15 @@ class Client:
         if not self.handle:
             raise ValueError("Invalid client handle")
         result = self._lib.ConnectToServer(self.handle, address.encode(), port)
-        if not result:
-            raise RuntimeError("Error connecting to server")
+        if result != 0:
+            raise RuntimeError("Error connecting to server", ErrorCode(result))
 
     def library_update(self) -> None:
         if not self.handle:
             raise ValueError("Invalid client handle")
         result = self._lib.LibraryUpdate(self.handle)
-        if not result:
-            raise RuntimeError("Error updating library")
+        if result != 0:
+            raise RuntimeError("Error updating library", ErrorCode(result))
 
     def shutdown_library(self) -> None:
         if not self.handle:
