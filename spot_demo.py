@@ -48,7 +48,7 @@ spot = sdk.create_robot('192.168.80.3')
 
 username = ""
 password = ""
-
+# CREATE THIS FILE, WITH ITS CONTENT BEING: "username,password" for your spot
 with open("auth", "r") as filestream:
     for line in filestream:
         username, password = line.split(',')
@@ -63,11 +63,11 @@ estop_client = spot.ensure_client('estop')
 estop_client.get_status()
 
 #Only register an ESTOP when spot motors are powered off
-estop_endpoint = bosdyn.client.estop.EstopEndpoint(client = estop_client, name="main_estop", estop_timeout=9.0)
-estop_endpoint.force_simple_setup()
+# estop_endpoint = bosdyn.client.estop.EstopEndpoint(client = estop_client, name="main_estop", estop_timeout=9.0)
+# estop_endpoint.force_simple_setup()
 
-estop_keep_alive = bosdyn.client.estop.EstopKeepAlive(estop_endpoint)
-estop_keep_alive.get_status()
+# estop_keep_alive = bosdyn.client.estop.EstopKeepAlive(estop_endpoint)
+# estop_keep_alive.get_status()
 
 # taking ownership of the robot
 lease_client = spot.ensure_client('lease')
@@ -101,23 +101,33 @@ def velocity_cmd_helper(desc="", v_x=0.0, v_y=0.0, v_rot=0.0):
     RobotCommandBuilder.synchro_velocity_command(v_x=v_x, v_y=v_y, v_rot=v_rot), 
     end_time_secs=time.time() + VELOCITY_CMD_DURATION)
 
+def safe_power_off():
+    print("Reset Triggered. Powering off robot!")
+    start_robot_command("safe_power_off", RobotCommandBuilder.safe_power_off_command())
+
 # AXIS FUNCTION DEFINITIONS ########################################
 def x_axis(value):
+    global x
     x = value
     if (abs(value) < 0.1):
         x = 0.0
+    print(x)
 
 def y_axis(value):
+    global y
     y = value
     if (abs(value) < 0.1):
         y = 0.0
 
 def pivot_axis(value):
+    global z
     z = value
     if (abs(value) < 0.1):
         z = 0.0
 
 def sit_axis(value):
+    global sit
+    print("Sit Axis", value)
     if (abs(value) > 0.5):
         sit = value
 ####################################################################
@@ -131,6 +141,8 @@ def update_sit_stand():
     return
 
 def update_move():
+    # global x
+    # global y
     if(x > 0):
         velocity_cmd_helper("move_forward", v_x=VELOCITY_BASE_SPEED)
     elif(x < 0):
@@ -141,16 +153,47 @@ def update_move():
         velocity_cmd_helper("strafe_left", v_y=VELOCITY_BASE_SPEED)
     return 0
 
-def safe_power_off():
-    print("Reset Triggered. Powering off robot!")
-    start_robot_command("safe_power_off", RobotCommandBuilder.safe_power_off_command())
-
 def update_rotate():
     if (z < 0):
         velocity_cmd_helper("turn_left", v_rot=VELOCITY_BASE_ANGULAR)
     elif(z>0):
         velocity_cmd_helper("turn_right", v_rot=-VELOCITY_BASE_ANGULAR)
 
+
+# # Add Test code here:
+# print("Program Ended without error")
+
+# #Should make Robot stand and then power off safely
+# print("Standing")
+# sit_axis(0.7)
+# update_sit_stand()
+# # start_robot_command('stand', RobotCommandBuilder.synchro_stand_command())
+# time.sleep(2.5)
+# print("z is positive")
+# x_axis(1)
+# update_move()
+# time.sleep(0.5)
+# update_move()
+# time.sleep(0.5)
+# update_move()
+# time.sleep(2.5)
+
+
+# velocity_cmd_helper("turn_left", v_rot=VELOCITY_BASE_ANGULAR)
+# time.sleep(2.5)
+# velocity_cmd_helper("turn_left", v_rot=VELOCITY_BASE_ANGULAR)
+# time.sleep(2.5)
+# velocity_cmd_helper("turn_right", v_rot=-VELOCITY_BASE_ANGULAR)
+# time.sleep(2.5)
+# velocity_cmd_helper("turn_right", v_rot=-VELOCITY_BASE_ANGULAR)
+# time.sleep(1)
+# sit = -1
+# update_sit_stand()
+# time.sleep(2.5)
+# sit = 1
+# update_sit_stand()
+# time.sleep(5)
+# start_robot_command("safe_power_off", RobotCommandBuilder.safe_power_off_command())
 
 if __name__ == "__main__":
 
@@ -170,12 +213,12 @@ if __name__ == "__main__":
     client.register_axis("strafe", -1.0, 1.0, "walk", "z", y_axis)
 
     print("adding axis:y")
-    client.register_axis("pivot",-1.0, 1.0, "pivot", "y", pivot_axis)
+    client.register_axis("pivot",-1.0, 1.0, "pivot", "x", pivot_axis)
 
     print("Sit down and stand up")
-    client.register_axis("stand", -1.0, 1.0, "stand", "y", sit_axis)
+    client.register_axis("stand", -1.0, 1.0, "stand", "z", sit_axis)
 
-    client.connect_to_server("192.168.1.7", 45575)
+    client.connect_to_server("192.168.80.102", 45575)
 
     while (True):
         sleep(1)
