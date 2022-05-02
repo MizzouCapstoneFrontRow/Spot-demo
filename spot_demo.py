@@ -1,3 +1,4 @@
+import asyncio
 from multiprocessing.connection import Client
 from re import X
 from socket import timeout
@@ -109,20 +110,22 @@ def safe_power_off():
 def x_axis(value):
     global x
     x = value
-    if (abs(value) < 0.1):
+    if (abs(value) < 0.5):
         x = 0.0
-    print(x)
+    print("X Axis", value)
 
 def y_axis(value):
     global y
     y = value
-    if (abs(value) < 0.1):
+    print("Y Axis", value)
+    if (abs(value) < 0.5):
         y = 0.0
 
 def pivot_axis(value):
     global z
     z = value
-    if (abs(value) < 0.1):
+    print("Z Axis", value)
+    if (abs(value) < 0.5):
         z = 0.0
 
 def sit_axis(value):
@@ -131,12 +134,11 @@ def sit_axis(value):
     if (abs(value) > 0.5):
         sit = value
 ####################################################################
-
 # Update Functions Defs ############################################
 def update_sit_stand():
-    if (sit < 0): # Sit down
+    if (sit > 0): # Sit down
         start_robot_command('sit', RobotCommandBuilder.synchro_sit_command())
-    elif(sit > 0):
+    elif(sit < 0):
         start_robot_command('stand', RobotCommandBuilder.synchro_stand_command())
     return
 
@@ -156,7 +158,7 @@ def update_move():
 def update_rotate():
     if (z < 0):
         velocity_cmd_helper("turn_left", v_rot=VELOCITY_BASE_ANGULAR)
-    elif(z>0):
+    elif(z > 0):
         velocity_cmd_helper("turn_right", v_rot=-VELOCITY_BASE_ANGULAR)
 
 
@@ -195,6 +197,40 @@ def update_rotate():
 # time.sleep(5)
 # start_robot_command("safe_power_off", RobotCommandBuilder.safe_power_off_command())
 
+
+# VIDEO Testing code
+# from bosdyn.client.image import ImageClient
+# image_client = spot.ensure_client(ImageClient.default_service_name)
+# sources = image_client.list_image_sources()
+# print([source.name for source in sources])
+
+# from PIL import Image
+# import io
+# # import cv2
+# import numpy as np
+# image_response = image_client.get_image_from_sources(["frontleft_fisheye_image"])[0]
+# # print(image_response)
+# image = Image.open(io.BytesIO(image_response.shot.image.data))
+# image.show()
+# image.save("test.jpg")
+
+# while (True):
+#     image = Image.open(io.BytesIO(image_response.shot.image.data))
+#     cv_image = np.array(image)
+#     cv_image = cv2.cvtColor(cv_image, cv2.COLOR_RGB2BGR)
+#     cv2.imshow('display', cv_image)
+#     cv2.waitKey(1)
+
+from PIL import Image
+import io
+import os
+
+from bosdyn.client.image import ImageClient
+image_client = spot.ensure_client(ImageClient.default_service_name)
+sources = image_client.list_image_sources()
+print([source.name for source in sources])
+# image_response = image_client.get_image_from_sources(["left_fisheye_image"])[0]
+
 if __name__ == "__main__":
 
     # ClientLibrary setup
@@ -207,10 +243,10 @@ if __name__ == "__main__":
     client.set_reset(lambda: safe_power_off())
 
     print("adding axis:x")
-    client.register_axis("move", -1.0, 1.0, "walk", "x", x_axis)
+    client.register_axis("move", -1.0, 1.0, "walk", "z", x_axis)
 
     print("adding axis:z")
-    client.register_axis("strafe", -1.0, 1.0, "walk", "z", y_axis)
+    client.register_axis("strafe", -1.0, 1.0, "walk", "x", y_axis)
 
     print("adding axis:y")
     client.register_axis("pivot",-1.0, 1.0, "pivot", "x", pivot_axis)
@@ -218,13 +254,58 @@ if __name__ == "__main__":
     print("Sit down and stand up")
     client.register_axis("stand", -1.0, 1.0, "stand", "z", sit_axis)
 
-    client.connect_to_server("192.168.80.102", 45575)
+    print("Safe shutdown function")
+
+    # f = io.BytesIO(b"data")
+    stream1Read, stream1Write = os.pipe()
+    # stream2Read, stream2Write = os.pipe()
+
+    
+    client.register_stream("Cam 1","mjpeg", stream1Read)
+    # client.register_stream("Cam 2", "mjpeg", stream2Read)
+
+    client.connect_to_server("192.168.80.103", 45575, 45577)
+
+    file1 = os.fdopen(stream1Write, "w")
+    # file2 = os.fdopen(stream2Write, "w")
 
     while (True):
-        sleep(1)
+
+        sleep(0.6)
         print("updating")
         client.library_update()
+        # print("image_response")
+        # image_response = image_client.get_image_from_sources(["left_fisheye_image"])[0]
+        # image = Image.open(io.BytesIO(image_response.shot.image.data))
+        # image.save(file1, "jpeg")
+
+        # image_response = image_client.get_image_from_sources(["frontright_depth"])[0]
+        # # print("image")
+        # image = Image.open(io.BytesIO(image_response.shot.image.data))
+        # # print("save")
+        # image.save(file2, "jpeg")
+
+        # image.show()
+        # print("image done")
         update_sit_stand()
         update_move()
         update_rotate()
+
     client.shutdown_library()
+
+
+
+# image_response = image_client.get_image_from_sources(["left_fisheye_image"])[0]
+# from PIL import Image
+# import io
+# import cv2
+# import numpy as np
+
+# image = Image.open(io.BytesIO(image_response.shot.image.data))
+# image.show()
+# while (True):
+#     image = Image.open(io.BytesIO(image_response.shot.image.data))
+#     cv_image = np.array(image)
+#     cv_image = cv2.cvtColor(cv_image, cv2.COLOR_RGB2BGR)
+#     cv2.imshow('display', cv_image)
+#     cv2.waitKey(1)

@@ -211,7 +211,11 @@ class Client:
     def register_stream(self, name: str, format: str, file: io.IOBase) -> None:
         if not self.handle:
             raise ValueError("Invalid client handle")
-        fd: int = file.fileno() # may raise OSError if not supported
+        if isinstance(file, int):
+            fd:int = file
+        else:
+            fd: int = file.fileno() # may raise OSError if not supported
+    
         self._files.append(file)
         result = self._lib.RegisterStream(self.handle, name.encode(), format.encode(), fd)
         if result != 0:
