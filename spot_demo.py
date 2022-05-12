@@ -15,6 +15,7 @@ import signal
 # from bosdyn.client.robot_command import RobotCommandClient, blocking_stand
 
 from PIL import Image
+import PIL
 import io
 import os
 
@@ -60,6 +61,9 @@ password = ""
 with open("auth", "r") as filestream:
     for line in filestream:
         username, password = line.split(',')
+print(username)
+print(password)
+password = password.strip()
 spot.authenticate(username, password)
 
 # # Gets the state of spot
@@ -81,7 +85,7 @@ estop_client.get_status()
 lease_client = spot.ensure_client('lease')
 lease_client.list_leases()
 
-lease = lease_client.acquire()
+lease = lease_client.take()
 lease_keep_alive = bosdyn.client.lease.LeaseKeepAlive(lease_client)
 lease_client.list_leases()
 
@@ -143,6 +147,7 @@ def sit_axis(value):
 ####################################################################
 # Update Functions Defs ############################################
 def update_sit_stand():
+    global sit
     if (sit > 0): # Sit down
         start_robot_command('sit', RobotCommandBuilder.synchro_sit_command())
     elif(sit < 0):
@@ -151,8 +156,8 @@ def update_sit_stand():
     return 0
 
 def update_move():
-    # global x
-    # global y
+    global x
+    global y
     if(x > 0):
         velocity_cmd_helper("move_forward", v_x=VELOCITY_BASE_SPEED)
     elif(x < 0):
@@ -166,6 +171,7 @@ def update_move():
     return 0
 
 def update_rotate():
+    global z
     if (z < 0):
         velocity_cmd_helper("turn_left", v_rot=VELOCITY_BASE_ANGULAR)
     elif(z > 0):
@@ -213,15 +219,16 @@ if __name__ == "__main__":
     client.register_stream("Cam 1","mjpeg", stream1Read)
     # client.register_stream("Cam 2", "mjpeg", stream2Read)
 
-    client.connect_to_server("192.168.80.103", 45575, 45577)
+    client.connect_to_server("172.31.0.1", 45575, 45577)
 
     file1 = os.fdopen(stream1Write, "w")
     # file2 = os.fdopen(stream2Write, "w")
 
     def video_stream():
         while(True):
-            image_response = image_client.get_image_from_sources(["left_fisheye_image"])[0]
+            image_response = image_client.get_image_from_sources(["frontright_fisheye_image"])[0]
             image = Image.open(io.BytesIO(image_response.shot.image.data))
+            image = image.rotate(270, PIL.Image.NEAREST, expand = 1)
             image.save(file1, "jpeg")
 
     video_thread = threading.Thread(target=video_stream)

@@ -28,7 +28,7 @@ if __name__ == "__main__":
     client.register_axis("rotate", -1.0, 1.0, "example_group", "z", axis)
 
     print("connecting")
-    client.connect_to_server("localhost", 45575)
+    client.connect_to_server("172.31.0.1", 45575)
     while(True):
         sleep(1)
         print("updating")
